@@ -1,16 +1,20 @@
 package com.core.service.controller;
 
 import com.core.service.dto.CreateLinkRequest;
-import com.core.service.dto.StatsResponse;
 import com.core.service.service.LinkService;
 import com.core.service.service.RateLimitService;
 import com.core.service.service.RedirectService;
+
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
+
 import lombok.RequiredArgsConstructor;
+
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
-import java.net.URI;
+
+import java.io.IOException;
 
 @RestController
 @RequiredArgsConstructor
