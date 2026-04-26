@@ -15,6 +15,7 @@ public class RateLimitService {
     private static final long WINDOW_MS = 60000;
 
     public boolean allow(String ip) {
+
         long now = System.currentTimeMillis();
 
         map.putIfAbsent(ip, new Counter(now));
