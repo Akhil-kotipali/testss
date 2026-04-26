@@ -1,4 +1,4 @@
-package com.core.service.config;
+package com.core.service;
 
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
