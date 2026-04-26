@@ -22,33 +22,29 @@ public class LinkService {
     private final LinkRepository repo;
     private final ShortCodeGenerator generator;
     private final StringRedisTemplate redis;
-    private final Executor asyncExecutor; // ✅ custom executor
+    private final Executor asyncExecutor;
 
     public String create(CreateLinkRequest req) {
 
-        // 1️⃣ Sanitize URL
+        // 1. Sanitize URL
         String url = req.getUrl().trim();
-        if (!url.startsWith("http")) {
-            url = "https://" + url;
-        }
+        if (!url.startsWith("http")) url = "https://" + url;
         final String finalUrl = url;
 
-        // 2️⃣ Check Redis for duplicate (fast path)
+        // 2. Redis duplicate check
         String existingCode = redis.opsForValue().get("url-map:" + finalUrl);
-        if (existingCode != null) {
-            return existingCode;
-        }
+        if (existingCode != null) return existingCode;
 
-        // 3️⃣ Generate short code
+        // 3. Generate code
         String code = (req.getCustomCode() != null && !req.getCustomCode().isBlank())
                 ? req.getCustomCode()
                 : generator.generate();
 
-        // 4️⃣ Store in Redis (instant response path)
+        // 4. Instant response via Redis
         redis.opsForValue().set(code, finalUrl, 24, TimeUnit.HOURS);
         redis.opsForValue().set("url-map:" + finalUrl, code, 24, TimeUnit.HOURS);
 
-        // 5️⃣ Async DB save (non-blocking)
+        // 5. Async DB save (TRUE async now)
         CompletableFuture.runAsync(() -> {
             try {
                 Link link = new Link();
@@ -65,8 +61,8 @@ public class LinkService {
                 repo.save(link);
 
             } catch (Exception e) {
-                // 🔥 prevent silent failure
-                e.printStackTrace();
+                // DO NOT break main flow
+                System.out.println("Async DB save failed: " + e.getMessage());
             }
         }, asyncExecutor);
 
