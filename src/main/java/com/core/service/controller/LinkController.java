@@ -30,23 +30,29 @@ public class LinkController {
     }
 
     @GetMapping("/r/{code}")
-public ResponseEntity<?> redirect(@PathVariable String code, HttpServletRequest request,
-        @RequestHeader(value = "X-TEST-MODE", required = false) String testMode) {
+public void redirect(@PathVariable String code,
+                     HttpServletResponse response,
+                     HttpServletRequest request,
+                     @RequestHeader(value = "X-TEST-MODE", required = false) String testMode) throws IOException {
 
     if (!"true".equals(testMode)) {
         if (!rateLimitService.allow(request.getRemoteAddr())) {
-            return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
-                    .body("Rate limit exceeded");
+            response.setStatus(429);
+            response.getWriter().write("Rate limit exceeded");
+            return;
         }
     }
 
     try {
         String url = redirectService.resolve(code);
-        return ResponseEntity.status(HttpStatus.FOUND)
-                .location(URI.create(url))
-                .build();
+
+        // ⚡ FASTEST redirect (no ResponseEntity)
+        response.setStatus(HttpServletResponse.SC_FOUND);
+        response.setHeader("Location", url);
+
     } catch (Exception e) {
-        return ResponseEntity.badRequest().body("Error: " + e.getMessage());
+        response.setStatus(400);
+        response.getWriter().write("Error: " + e.getMessage());
     }
 }
 }
