@@ -1,7 +1,10 @@
 package com.core.service.service;
 
 import java.time.LocalDateTime;
+import java.util.Map;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.Executor;
 
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
@@ -17,44 +20,55 @@ public class RedirectService {
 
     private final LinkRepository repo;
     private final StringRedisTemplate redisTemplate;
+    private final Executor asyncExecutor;
+
+    // 🔥 L1 CACHE (ULTRA FAST)
+    private final Map<String, String> localCache = new ConcurrentHashMap<>();
 
     private static final long CACHE_TTL_HOURS = 24;
 
     public String resolve(String code) {
 
-        // 🔹 1. Try Redis first
+        // 🥇 STEP 1: LOCAL CACHE (FASTEST)
+        String url = localCache.get(code);
+        if (url != null) {
+            asyncClickIncrement(code);
+            return url;
+        }
+
+        // 🥈 STEP 2: REDIS
         String cachedUrl = redisTemplate.opsForValue().get(code);
-
         if (cachedUrl != null) {
-
-            // 🔥 Async increment (non-blocking)
-            CompletableFuture.runAsync(() ->
-                redisTemplate.opsForValue().increment("clicks:" + code)
-            );
-
+            localCache.put(code, cachedUrl); // promote to L1
+            asyncClickIncrement(code);
             return cachedUrl;
         }
 
-        // 🔹 2. Fallback to DB
+        // 🥉 STEP 3: DATABASE
         Link link = repo.findByShortCode(code)
                 .orElseThrow(() -> new RuntimeException("Not found"));
 
-        // 🔹 3. Expiry check
         if (!link.isAdminLink() && link.getExpiryAt() != null &&
                 link.getExpiryAt().isBefore(LocalDateTime.now())) {
             throw new RuntimeException("Expired");
         }
 
-        String url = link.getOriginalUrl();
+        url = link.getOriginalUrl();
 
-        // 🔥 Store in Redis WITH TTL (important)
+        // store in both caches
         redisTemplate.opsForValue().set(code, url, CACHE_TTL_HOURS, java.util.concurrent.TimeUnit.HOURS);
+        localCache.put(code, url);
 
-        // 🔥 Async click increment here too
-        CompletableFuture.runAsync(() ->
-            redisTemplate.opsForValue().increment("clicks:" + code)
-        );
+        asyncClickIncrement(code);
 
         return url;
+    }
+
+    // 🔥 NON-BLOCKING CLICK COUNT
+    private void asyncClickIncrement(String code) {
+        CompletableFuture.runAsync(() ->
+                redisTemplate.opsForValue().increment("clicks:" + code),
+                asyncExecutor
+        );
     }
 }
