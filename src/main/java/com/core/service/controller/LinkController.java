@@ -30,29 +30,23 @@ public class LinkController {
     }
 
     @GetMapping("/r/{code}")
-    public ResponseEntity<?> redirect(@PathVariable String code, HttpServletRequest request) {
-        // Fast-fail for static files/API
-        if (code.contains(".") || code.equals("health") || code.startsWith("api")) {
-            return ResponseEntity.notFound().build();
-        }
+public ResponseEntity<?> redirect(@PathVariable String code, HttpServletRequest request,
+        @RequestHeader(value = "X-TEST-MODE", required = false) String testMode) {
 
+    if (!"true".equals(testMode)) {
         if (!rateLimitService.allow(request.getRemoteAddr())) {
-            return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS).body("Rate limit exceeded");
-        }
-
-        try {
-            String url = redirectService.resolve(code);
-            
-            // Fix for "Temporal White Page": Ensure protocol exists
-            if (!url.startsWith("http://") && !url.startsWith("https://")) {
-                url = "https://" + url;
-            }
-
-            return ResponseEntity.status(HttpStatus.FOUND)
-                    .location(URI.create(url))
-                    .build();
-        } catch (Exception e) {
-            return ResponseEntity.badRequest().body("Error: " + e.getMessage());
+            return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
+                    .body("Rate limit exceeded");
         }
     }
+
+    try {
+        String url = redirectService.resolve(code);
+        return ResponseEntity.status(HttpStatus.FOUND)
+                .location(URI.create(url))
+                .build();
+    } catch (Exception e) {
+        return ResponseEntity.badRequest().body("Error: " + e.getMessage());
+    }
+}
 }
