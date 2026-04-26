@@ -1,9 +1,7 @@
 package com.core.service.service;
 
 import java.time.LocalDateTime;
-import java.util.Map;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executor;
 
 import org.springframework.data.redis.core.StringRedisTemplate;
@@ -20,54 +18,50 @@ public class RedirectService {
 
     private final LinkRepository repo;
     private final StringRedisTemplate redis;
+    private final FastCacheService fastCache;
     private final Executor asyncExecutor;
-
-    // 🔥 L1 CACHE (fastest possible)
-    private final Map<String, String> localCache = new ConcurrentHashMap<>();
 
     public String resolve(String code) {
 
-        // 🥇 1. Local cache (NO NETWORK)
-        String url = localCache.get(code);
+        // ⚡ 1. L1 CACHE (nanoseconds)
+        String url = fastCache.get(code);
         if (url != null) {
-            asyncIncrement(code);
+            asyncClick(code);
             return url;
         }
 
-        // 🥈 2. Redis
-        String cachedUrl = redis.opsForValue().get(code);
-        if (cachedUrl != null) {
-            localCache.put(code, cachedUrl); // promote to L1
-            asyncIncrement(code);
-            return cachedUrl;
+        // ⚡ 2. REDIS
+        url = redis.opsForValue().get(code);
+        if (url != null) {
+            fastCache.put(code, url); // promote to L1
+            asyncClick(code);
+            return url;
         }
 
-        // 🥉 3. Database fallback
+        // ⚡ 3. DB
         Link link = repo.findByShortCode(code)
                 .orElseThrow(() -> new RuntimeException("Not found"));
 
-        if (!link.isAdminLink() &&
-                link.getExpiryAt() != null &&
+        if (!link.isAdminLink() && link.getExpiryAt() != null &&
                 link.getExpiryAt().isBefore(LocalDateTime.now())) {
             throw new RuntimeException("Expired");
         }
 
         url = link.getOriginalUrl();
 
-        // store in both caches
+        // store in caches
+        fastCache.put(code, url);
         redis.opsForValue().set(code, url);
-        localCache.put(code, url);
 
-        asyncIncrement(code);
+        asyncClick(code);
 
         return url;
     }
 
-    private void asyncIncrement(String code) {
-        CompletableFuture.runAsync(() -> {
-            try {
-                redis.opsForValue().increment("clicks:" + code);
-            } catch (Exception ignored) {}
-        }, asyncExecutor);
+    private void asyncClick(String code) {
+        CompletableFuture.runAsync(() ->
+                redis.opsForValue().increment("clicks:" + code),
+                asyncExecutor
+        );
     }
 }
