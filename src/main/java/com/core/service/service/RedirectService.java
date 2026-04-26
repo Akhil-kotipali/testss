@@ -19,36 +19,35 @@ import lombok.RequiredArgsConstructor;
 public class RedirectService {
 
     private final LinkRepository repo;
-    private final StringRedisTemplate redisTemplate;
+    private final StringRedisTemplate redis;
     private final Executor asyncExecutor;
 
-    // 🔥 L1 CACHE (ULTRA FAST)
+    // 🔥 L1 CACHE (fastest possible)
     private final Map<String, String> localCache = new ConcurrentHashMap<>();
-
-    private static final long CACHE_TTL_HOURS = 24;
 
     public String resolve(String code) {
 
-        // 🥇 STEP 1: LOCAL CACHE (FASTEST)
+        // 🥇 1. Local cache (NO NETWORK)
         String url = localCache.get(code);
         if (url != null) {
-            asyncClickIncrement(code);
+            asyncIncrement(code);
             return url;
         }
 
-        // 🥈 STEP 2: REDIS
-        String cachedUrl = redisTemplate.opsForValue().get(code);
+        // 🥈 2. Redis
+        String cachedUrl = redis.opsForValue().get(code);
         if (cachedUrl != null) {
             localCache.put(code, cachedUrl); // promote to L1
-            asyncClickIncrement(code);
+            asyncIncrement(code);
             return cachedUrl;
         }
 
-        // 🥉 STEP 3: DATABASE
+        // 🥉 3. Database fallback
         Link link = repo.findByShortCode(code)
                 .orElseThrow(() -> new RuntimeException("Not found"));
 
-        if (!link.isAdminLink() && link.getExpiryAt() != null &&
+        if (!link.isAdminLink() &&
+                link.getExpiryAt() != null &&
                 link.getExpiryAt().isBefore(LocalDateTime.now())) {
             throw new RuntimeException("Expired");
         }
@@ -56,19 +55,19 @@ public class RedirectService {
         url = link.getOriginalUrl();
 
         // store in both caches
-        redisTemplate.opsForValue().set(code, url, CACHE_TTL_HOURS, java.util.concurrent.TimeUnit.HOURS);
+        redis.opsForValue().set(code, url);
         localCache.put(code, url);
 
-        asyncClickIncrement(code);
+        asyncIncrement(code);
 
         return url;
     }
 
-    // 🔥 NON-BLOCKING CLICK COUNT
-    private void asyncClickIncrement(String code) {
-        CompletableFuture.runAsync(() ->
-                redisTemplate.opsForValue().increment("clicks:" + code),
-                asyncExecutor
-        );
+    private void asyncIncrement(String code) {
+        CompletableFuture.runAsync(() -> {
+            try {
+                redis.opsForValue().increment("clicks:" + code);
+            } catch (Exception ignored) {}
+        }, asyncExecutor);
     }
 }
