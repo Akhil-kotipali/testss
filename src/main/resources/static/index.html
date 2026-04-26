@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Link Service</title>
+    <style>
+        body { font-family: sans-serif; margin: 40px; }
+        input { padding: 5px; margin-bottom: 10px; width: 250px; }
+        button { padding: 5px 15px; cursor: pointer; }
+        .error { color: red; font-weight: bold; }
+    </style>
+</head>
+<body>
+    <h2>Create Link</h2>
+
+    <input id="url" type="url" placeholder="Enter URL"><br>
+    <input id="custom" type="text" placeholder="Custom code (optional)"><br>
+    <input id="ttl" type="number" placeholder="TTL minutes (optional)"><br>
+
+    <label style="display: block; margin-bottom: 10px;">
+        <input type="checkbox" id="admin"> Admin Link (never expire)
+    </label>
+    <input id="adminKey" type="password" placeholder="Admin Key (only for admin)"><br><br>
+
+    <button onclick="create()">Create</button>
+
+    <p id="result"></p>
+
+    <script>
+        async function create() {
+            const resultElement = document.getElementById('result');
+            resultElement.innerText = "Processing..."; // Loading text
+            resultElement.className = "";
+
+            const body = {
+                url: document.getElementById('url').value,
+                customCode: document.getElementById('custom').value,
+                ttlMinutes: document.getElementById('ttl').value || null,
+                admin: document.getElementById('admin').checked
+            };
+
+            try {
+                const res = await fetch('/api/links', {
+                    method: 'POST',
+                    headers: { 
+                        'Content-Type': 'application/json',
+                        'X-ADMIN-KEY': document.getElementById('adminKey').value
+                    },
+                    body: JSON.stringify(body)
+                });
+
+                // Proper error handling from your first snippet
+                if (!res.ok) {
+                    const err = await res.text();
+                    resultElement.innerText = "Error: " + err;
+                    resultElement.className = "error";
+                    return;
+                }
+
+                const code = await res.text();
+
+                // Formats the successful link
+                resultElement.innerHTML = 
+                    `Short link: <a href="/r/${code}" target="_blank">${location.origin}/r/${code}</a>`;
+                    
+            } catch (error) {
+                // Catches network errors (e.g., if the backend is down)
+                resultElement.innerText = "Network Error: " + error.message;
+                resultElement.className = "error";
+            }
+        }
+    </script>
+</body>
+</html>

@@ -1,0 +1,20 @@
+version: '3.8'
+
+services:
+  # 1. Your caching layer
+  redis-cache:
+    image: redis:alpine
+    ports:
+      - "6379:6379"
+
+  # 2. Your API Execution Engine
+  link-api:
+    build: .
+    ports:
+      - "8080:8080"
+    environment:
+      # Tell Spring Boot to connect to the Redis container by its service name
+      - SPRING_DATA_REDIS_HOST=redis-cache
+      - SPRING_DATA_REDIS_PORT=6379
+    depends_on:
+      - redis-cache
